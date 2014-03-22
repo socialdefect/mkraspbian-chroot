@@ -1,0 +1,220 @@
+#!/bin/bash
+
+chroot(){
+	if [ ! -d "$2" ] ; then
+		echo 'Not a valid mountpoint!'
+		Usage
+		exit 1
+	fi
+
+	if [ ! -f "$2"/bin/bash ] ; then
+		echo 'The directory does not contain a chrootable system!'
+		echo 'Cannot continue...'
+		echo
+		Usage
+		exit 1
+	else
+		ARGUMENTS=`echo $@ | sed s'/chroot//'`
+		sudo LC_ALL=C chroot $ARGUMENTS
+	fi
+}
+
+MountIt(){
+	if [ -z $2 ] ; then
+		echo 'Usage: mkraspbian-chroot mount [/path/to/chroot/dir]'
+		exit 1
+	fi
+
+	if [ $1 = mount ] ; then
+        	sudo mount -t proc proc "$2"/proc
+                sudo mount -t sysfs sysfs "$2"/sys
+                sudo mount -o bind /dev "$2"/dev
+	else
+		sudo mount -t proc proc "$DIR/$CHROOT"/proc
+        	sudo mount -t sysfs sysfs "$DIR/$CHROOT"/sys
+	        sudo mount -o bind /dev "$DIR/$CHROOT"/dev
+	fi
+
+	sudo cp -Lv /etc/resolv.conf "$DIR/$CHROOT"/etc/
+}
+
+unmount(){
+	if [ -z $2 ] ; then
+		echo 'Usage: mkraspbian-chroot unmount [/path/to/chroot/dir]'
+		exit 1
+	fi
+
+	for i in proc sys dev ; do
+		sudo umount "$2"/$i
+		if [ $? != 0 ] ; then
+			echo "Failed to unmount $2/$i"
+			echo "Please try again!"
+			echo 'When unmount keeps failing restart your computer!'
+			echo
+			exit 1
+		fi
+			exit 0
+	done
+}
+
+Usage(){
+	echo
+        echo 'Usage:'
+	echo '       mkraspbian-chroot  (with no arguments will create a chroot in the working directory)'
+        echo '       mkraspbian-chroot [workdir] [chroot name] [distribution] [mirror]'
+        echo '       mkraspbian-chroot mount [/path/to/chroot/dir]'
+        echo '       mkraspbian-chroot unmount [/path/to/chroot/dir]'
+        echo '       mkraspbian-chroot chroot [/path/to/chroot/dir] [command] (if [command] is not passed it will default to a bash shell)'
+        echo
+}
+
+checkdir(){
+if [ -z $1 ] ; then
+        DIR=`pwd`
+else
+	DIR="$1"
+fi
+
+	if [ -d "$DIR" ] ; then
+		echo && echo 'The directory exists!'
+		read -p 'Enter "YES" to overwrite or press [Enter] to rename the new dir: ' YESNO
+		if [ $YESNO = YES ] &>/dev/null || [ $YESNO = yes ] &>/dev/null ; then
+		        echo "Will overwrite files in $DIR"
+		else
+			echo
+			read -p 'Enter a new name for the chroot: ' CHROOT
+		fi
+	else
+			mkdir -pv "$DIR"
+		if [ $? = 1 ] ; then
+			echo && echo "Cannot create $1"
+			if [ -f "$DIR" ] ; then
+				echo "$1 exists and is not a directory, cannot create the chroot!"
+				exit 1
+			else
+				echo 'Most likely you do not have write permissions on its parent.'
+				echo && echo 'Enter "retry" to try again with admin privileges: '
+				read -p 'or press [Enter] to Quit: ' YESNO
+			fi
+
+			if [ $YESNO != retry ] ; then
+				exit 1
+			else
+				sudo mkdir -pv "$DIR"
+				if [ $? != 0 ] ; then
+					echo 'Failed again, will now exit....' && echo
+				fi
+			fi
+		fi
+	fi
+}
+
+if [ $1 = mount ] &>/dev/null ; then
+	MountIt "$@"
+	exit $?
+elif [ $1 = chroot ] &>/dev/null ; then
+	chroot "$@"
+	exit $?
+elif [ $1 = 'help' ] &>/dev/null ; then
+        Usage
+	exit 0
+elif [ $1 = unmount ] &>/dev/null ; then
+	unmount "$@"
+fi
+
+if [ -z $3 ] ; then
+        DIST='wheezy'
+else
+        DIST="$3"
+fi
+
+if [ -z $2 ] ; then
+        CHROOT="chroot-raspbian-$DIST"
+	COUNT=2
+	if [ -d "$1"/"$CHROOT" ] ; then
+		while [ -d "$1"/"$CHROOT" ] ; do
+			COUNT=`expr $COUNT + 1`
+		done
+		CHROOT="${CHROOT}_${COUNT}"
+	fi
+else
+	CHROOT="$2"
+fi
+
+checkdir $@
+
+if [ -z "$4" ] ; then
+	MIRROR="http://archive.raspbian.org/raspbian"
+else
+	MIRROR="$4"
+fi
+
+set -e
+clear
+
+DEPS=0
+
+if [ ! -f `which debootstrap` ] ; then
+	echo '(!!)  Missing dependency: debootstrap'
+	DEPS="${DEPS}1"
+elif [ ! -f `which qemu-debootstrap` ] ; then
+	echo '(!!)  Missing dependency: qemu-debootstrap'
+	DEPS="${DEPS}1"
+elif [ ! -f `which qemu-debootstrap` ] ; then
+	echo '(!!)  Missing dependency: qemu-arm-static'
+	DEPS="${DEPS}1"
+fi
+
+if [ "$DEPS" != 0 ] ; then
+	echo && echo 'Cannot continue, please install the missing dependencies.'
+	echo
+	exit 1
+fi
+
+echo && echo "Creating chroot named: $CHROOT"
+	echo "from raspbian release: $DIST"
+	echo "in directory: `pwd`."
+	echo && read -p 'If this is what you want enter 'YES' or press [Enter] for usage: ' YESNO
+
+	if [ "$YESNO" = 'YES' ] || [ "$YESNO" = 'yes' ] ; then
+		        if [ -f `which apt-key` ] ; then
+            		    echo 'Adding the Raspbian GPG signing key to the system:'
+                	    echo
+		            wget http://archive.raspbian.org/raspbian.public.key -O - | sudo apt-key add -
+        		else
+                	    echo 'Cannot add repo key, apt-key was not found on this system'
+                	    echo 'this is normal if you are not running a Debian based OS.'
+                	    echo 'You can manualy download the key from: http://archive.raspbian.org/raspbian.public.key'
+                	    echo
+		        fi
+		sudo qemu-debootstrap --verbose --keyring /etc/apt/trusted.gpg --arch armhf --foreign "$DIST" "$DIR/$CHROOT" "$MIRROR"
+	else
+		Usage
+		exit 0
+	fi
+
+if [ $? != 0 ] ; then
+	RETRY=3
+	while [ $RETRY != 0 ] ; do
+		echo "Debootstrap failed, will retry in 10 seconds" && sleep 10
+		sudo qemu-debootstrap --verbose --keyring /etc/apt/trusted.gpg --arch armhf --foreign "$DIST" "$DIR/$CHROOT" http://archive.raspbian.org/raspbian
+		if [ $? != 0 ] ; then
+			RETRY=`expr $RETRY - 1`
+		fi
+	done
+		echo && echo 'Failed to bootstrap your chroot, will now exit.'
+		exit 1
+else
+
+	sudo chroot "$DIR/$CHROOT" echo 'PS1="(Raspbian) $PS1"' chroot-raspbian-armhf/etc/bash.bashrc
+
+	echo 'Bind mounting dynamic filesystems....'
+	echo
+	sudo mount -t proc proc "$DIR/$CHROOT"/proc
+	sudo mount -t sysfs sysfs "$DIR/$CHROOT"/sys
+	sudo mount -o bind /dev "$DIR/$CHROOT"/dev
+
+	echo "To chroot run: mkraspbian-chroot chroot "$DIR/$CHROOT""
+fi
+
+exit $?
