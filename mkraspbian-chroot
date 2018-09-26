@@ -144,7 +144,7 @@ fi
 checkdir $@
 
 if [ -z "$4" ] ; then
-	MIRROR="http://archive.raspbian.org/raspbian"
+	MIRROR="http://raspbian.raspberrypi.org/raspbian/"
 else
 	MIRROR="$4"
 fi
@@ -180,11 +180,11 @@ echo && echo "Creating chroot named: $CHROOT"
 		        if [ -f `which apt-key` ] ; then
             		    echo 'Adding the Raspbian GPG signing key to the system:'
                 	    echo
-		            wget http://archive.raspbian.org/raspbian.public.key -O - | sudo apt-key add -
+		            wget http://raspbian.raspberrypi.org/raspbian.public.key -O - | sudo apt-key add -
         		else
                 	    echo 'Cannot add repo key, apt-key was not found on this system'
                 	    echo 'this is normal if you are not running a Debian based OS.'
-                	    echo 'You can manualy download the key from: http://archive.raspbian.org/raspbian.public.key'
+                	    echo 'You can manualy download the key from: http://raspbian.raspberrypi.org/raspbian.public.key'
                 	    echo
 		        fi
 		sudo qemu-debootstrap --verbose --keyring /etc/apt/trusted.gpg --arch armhf --foreign "$DIST" "$DIR/$CHROOT" "$MIRROR"
@@ -197,7 +197,7 @@ if [ $? != 0 ] ; then
 	RETRY=3
 	while [ $RETRY != 0 ] ; do
 		echo "Debootstrap failed, will retry in 10 seconds" && sleep 10
-		sudo qemu-debootstrap --verbose --keyring /etc/apt/trusted.gpg --arch armhf --foreign "$DIST" "$DIR/$CHROOT" http://archive.raspbian.org/raspbian
+		sudo qemu-debootstrap --verbose --keyring /etc/apt/trusted.gpg --arch armhf --foreign "$DIST" "$DIR/$CHROOT" http://raspbian.raspberrypi.org/raspbian
 		if [ $? != 0 ] ; then
 			RETRY=`expr $RETRY - 1`
 		fi
